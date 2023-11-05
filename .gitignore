@@ -15,3 +15,4 @@ logs/
 *.csv
 *.dat
 .bsp
+.scala-build/

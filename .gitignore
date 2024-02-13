@@ -16,3 +16,4 @@ logs/
 *.dat
 .bsp
 .scala-build/
+**/project/

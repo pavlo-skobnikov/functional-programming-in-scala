@@ -1,4 +1,5 @@
 import scala.annotation.tailrec
+
 def and(x: Boolean, y: => Boolean) = if x then y else x
 
 // Implements &&

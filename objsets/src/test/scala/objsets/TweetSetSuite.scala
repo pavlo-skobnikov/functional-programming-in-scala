@@ -55,6 +55,5 @@ class TweetSetSuite extends munit.FunSuite:
       assert(trends.head.user == "a" || trends.head.user == "b")
   }
 
-
   import scala.concurrent.duration.*
   override val munitTimeout = 10.seconds

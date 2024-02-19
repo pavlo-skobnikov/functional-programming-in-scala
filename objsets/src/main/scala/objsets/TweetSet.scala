@@ -32,16 +32,14 @@ abstract class TweetSet extends TweetSetInterface:
 
   /** This method takes a predicate and returns a subset of all the elements in
     * the original set for which the predicate is true.
-    *
-    * Question: Can we implement this method here, or should it remain abstract
-    * and be implemented in the subclasses?
     */
-  def filter(p: Tweet => Boolean): TweetSet = ???
+  def filter(predicate: Tweet => Boolean): TweetSet =
+    this.filterAcc(predicate, Empty())
 
   /** This is a helper method for `filter` that propagates the accumulated
     * tweets.
     */
-  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet
+  def filterAcc(predicate: Tweet => Boolean, acc: TweetSet): TweetSet
 
   /** Returns a new `TweetSet` that is the union of `TweetSet`s `this` and
     * `that`.
@@ -49,7 +47,12 @@ abstract class TweetSet extends TweetSetInterface:
     * Question: Should we implement this method here, or should it remain
     * abstract and be implemented in the subclasses?
     */
-  def union(that: TweetSet): TweetSet = ???
+  def union(that: TweetSet): TweetSet =
+    var accumulatedSet = this
+
+    that.foreach(thatTweet => accumulatedSet = accumulatedSet.incl(thatTweet))
+
+    accumulatedSet
 
   /** Returns the tweet from this set which has the greatest retweet count.
     *
@@ -59,7 +62,12 @@ abstract class TweetSet extends TweetSetInterface:
     * Question: Should we implement this method here, or should it remain
     * abstract and be implemented in the subclasses?
     */
-  def mostRetweeted: Tweet = ???
+  def mostRetweeted: Tweet = mostRetweetedOpt match
+    case None =>
+      throw java.util.NoSuchElementException("mostRetweeted of EmptySet")
+    case Some(tweet) => tweet
+
+  def mostRetweetedOpt: Option[Tweet]
 
   /** Returns a list containing all tweets of this set, sorted by retweet count
     * in descending order. In other words, the head of the resulting list should
@@ -69,7 +77,21 @@ abstract class TweetSet extends TweetSetInterface:
     * Should we implement this method here, or should it remain abstract and be
     * implemented in the subclasses?
     */
-  def descendingByRetweet: TweetList = ???
+  def descendingByRetweet: TweetList =
+    var accumulatedSet = this
+    var tweetList: TweetList = Nil
+
+    var mostRtOpt = accumulatedSet.mostRetweetedOpt
+
+    while mostRtOpt.isDefined do
+      val mostRt = mostRtOpt.get
+
+      accumulatedSet = accumulatedSet.remove(mostRt)
+      tweetList = tweetList.inclLast(mostRt)
+
+      mostRtOpt = accumulatedSet.mostRetweetedOpt
+
+    tweetList
 
   /** The following methods are already implemented
     */
@@ -91,78 +113,112 @@ abstract class TweetSet extends TweetSetInterface:
 
   /** This method takes a function and applies it to every element in the set.
     */
-  def foreach(f: Tweet => Unit): Unit
+  def foreach(func: Tweet => Unit): Unit
 
 class Empty extends TweetSet:
-  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = ???
 
-  /** The following methods are already implemented
-    */
+  override def mostRetweetedOpt: Option[Tweet] = None
 
-  def contains(tweet: Tweet): Boolean = false
+  override def filterAcc(predicate: Tweet => Boolean, acc: TweetSet): TweetSet =
+    acc
 
-  def incl(tweet: Tweet): TweetSet = NonEmpty(tweet, Empty(), Empty())
+  override def contains(tweet: Tweet): Boolean = false
 
-  def remove(tweet: Tweet): TweetSet = this
+  override def incl(tweet: Tweet): TweetSet = NonEmpty(tweet, Empty(), Empty())
 
-  def foreach(f: Tweet => Unit): Unit = ()
+  override def remove(tweet: Tweet): TweetSet = this
+
+  override def foreach(func: Tweet => Unit): Unit = ()
 
 class NonEmpty(elem: Tweet, left: TweetSet, right: TweetSet) extends TweetSet:
+  override def mostRetweetedOpt: Option[Tweet] =
+    val mostRtLeft = left.mostRetweetedOpt
+    val mostRtRight = right.mostRetweetedOpt
 
-  def filterAcc(p: Tweet => Boolean, acc: TweetSet): TweetSet = ???
+    val mostRtChild: Option[Tweet] = (mostRtLeft, mostRtRight) match
+      case (None, None)        => None
+      case (None, Some(tweet)) => Some(tweet)
+      case (Some(tweet), None) => Some(tweet)
+      case (Some(leftTweet), Some(rightTweet)) =>
+        if leftTweet.retweets > rightTweet.retweets then Some(leftTweet)
+        else Some(rightTweet)
 
-  /** The following methods are already implemented
-    */
+    mostRtChild match
+      case None => Some(elem)
+      case Some(tweet) =>
+        if tweet.retweets > elem.retweets then Some(tweet)
+        else Some(elem)
 
-  def contains(x: Tweet): Boolean =
-    if x.text < elem.text then left.contains(x)
-    else if elem.text < x.text then right.contains(x)
+  override def filterAcc(predicate: Tweet => Boolean, acc: TweetSet): TweetSet =
+    val rightFiltered = right.filterAcc(predicate, acc)
+    val leftFiltered = left.filterAcc(predicate, rightFiltered)
+
+    if predicate(elem) then leftFiltered.incl(elem) else leftFiltered
+
+  override def contains(tweet: Tweet): Boolean =
+    if tweet.text < elem.text then left.contains(tweet)
+    else if elem.text < tweet.text then right.contains(tweet)
     else true
 
-  def incl(x: Tweet): TweetSet =
-    if x.text < elem.text then NonEmpty(elem, left.incl(x), right)
-    else if elem.text < x.text then NonEmpty(elem, left, right.incl(x))
+  override def incl(tweet: Tweet): TweetSet =
+    if tweet.text < elem.text then NonEmpty(elem, left.incl(tweet), right)
+    else if elem.text < tweet.text then NonEmpty(elem, left, right.incl(tweet))
     else this
 
-  def remove(tw: Tweet): TweetSet =
-    if tw.text < elem.text then NonEmpty(elem, left.remove(tw), right)
-    else if elem.text < tw.text then NonEmpty(elem, left, right.remove(tw))
+  override def remove(tweet: Tweet): TweetSet =
+    if tweet.text < elem.text
+    then NonEmpty(elem, left.remove(tweet), right)
+    else if elem.text < tweet.text
+    then NonEmpty(elem, left, right.remove(tweet))
     else left.union(right)
 
-  def foreach(f: Tweet => Unit): Unit =
-    f(elem)
-    left.foreach(f)
-    right.foreach(f)
+  override def foreach(func: Tweet => Unit): Unit =
+    func(elem)
+    left.foreach(func)
+    right.foreach(func)
 
 trait TweetList:
   def head: Tweet
   def tail: TweetList
   def isEmpty: Boolean
-  def foreach(f: Tweet => Unit): Unit =
+  def inclLast(tweet: Tweet): TweetList
+  def foreach(func: Tweet => Unit): Unit =
     if !isEmpty then
-      f(head)
-      tail.foreach(f)
+      func(head)
+      tail.foreach(func)
 
 object Nil extends TweetList:
-  def head = throw java.util.NoSuchElementException("head of EmptyList")
-  def tail = throw java.util.NoSuchElementException("tail of EmptyList")
-  def isEmpty = true
+  override def head =
+    throw java.util.NoSuchElementException("head of EmptyList")
+  override def tail =
+    throw java.util.NoSuchElementException("tail of EmptyList")
+  override def isEmpty = true
+  override def inclLast(tweet: Tweet): TweetList = Cons(tweet, Nil)
 
 class Cons(val head: Tweet, val tail: TweetList) extends TweetList:
-  def isEmpty = false
+  override def isEmpty = false
+  override def inclLast(tweet: Tweet): TweetList =
+    Cons(head, tail.inclLast(tweet))
 
 object GoogleVsApple:
   val google = List("android", "Android", "galaxy", "Galaxy", "nexus", "Nexus")
   val apple = List("ios", "iOS", "iphone", "iPhone", "ipad", "iPad")
 
-  lazy val googleTweets: TweetSet = ???
-  lazy val appleTweets: TweetSet = ???
+  lazy val googleTweets: TweetSet = TweetReader.allTweets
+    .filter(tweet =>
+      google.exists(matchedStr => tweet.text.contains(matchedStr))
+    )
+  lazy val appleTweets: TweetSet = TweetReader.allTweets
+    .filter(tweet =>
+      apple.exists(matchedStr => tweet.text.contains(matchedStr))
+    )
 
   /** A list of all tweets mentioning a keyword from either apple or google,
     * sorted by the number of retweets.
     */
-  lazy val trending: TweetList = ???
+  lazy val trending: TweetList =
+    googleTweets.union(appleTweets).descendingByRetweet
 
 object Main extends App:
   // Print the trending tweets
-  GoogleVsApple.trending foreach println
+  GoogleVsApple.trending.foreach(println)
